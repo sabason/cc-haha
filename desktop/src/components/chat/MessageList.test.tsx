@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MessageList, buildRenderItems } from './MessageList'
+import { MessageList, buildRenderModel } from './MessageList'
 import { useChatStore } from '../../stores/chatStore'
 import { useTabStore } from '../../stores/tabStore'
 import type { UIMessage } from '../../types/chat'
@@ -117,12 +117,64 @@ describe('MessageList nested tool calls', () => {
       },
     ]
 
-    const toolUseIds = new Set(messages.filter((message) => message.type === 'tool_use').map((message) => message.toolUseId))
-    const renderItems = buildRenderItems(messages, toolUseIds)
+    const { renderItems } = buildRenderModel(messages)
     const toolGroups = renderItems.filter((item) => item.kind === 'tool_group')
 
     expect(toolGroups).toHaveLength(2)
     expect(toolGroups.map((item) => item.toolCalls[0]?.toolUseId)).toEqual(['agent-1', 'write-1'])
+  })
+
+  it('keeps later nested tool calls after an interleaved user message', () => {
+    const messages: UIMessage[] = [
+      {
+        id: 'tool-agent',
+        type: 'tool_use',
+        toolName: 'Agent',
+        toolUseId: 'agent-1',
+        input: { description: 'Inspect src/components' },
+        timestamp: 1,
+      },
+      {
+        id: 'tool-read',
+        type: 'tool_use',
+        toolName: 'Read',
+        toolUseId: 'read-1',
+        input: { file_path: '/tmp/example.ts' },
+        timestamp: 2,
+        parentToolUseId: 'agent-1',
+      },
+      {
+        id: 'user-follow-up',
+        type: 'user_text',
+        content: '顺便把刚才的问题也处理掉',
+        timestamp: 3,
+      },
+      {
+        id: 'tool-write',
+        type: 'tool_use',
+        toolName: 'Write',
+        toolUseId: 'write-1',
+        input: { file_path: '/tmp/out.ts', content: 'export const value = 1' },
+        timestamp: 4,
+        parentToolUseId: 'agent-1',
+      },
+    ]
+
+    const { renderItems, childToolCallsByParent } = buildRenderModel(messages)
+    const renderedKinds = renderItems.map((item) =>
+      item.kind === 'tool_group'
+        ? `tool:${item.toolCalls[0]?.toolUseId}`
+        : `message:${item.message.id}`,
+    )
+
+    expect(renderedKinds).toEqual([
+      'tool:agent-1',
+      'message:user-follow-up',
+      'tool:write-1',
+    ])
+    expect(
+      (childToolCallsByParent.get('agent-1') ?? []).map((toolCall) => toolCall.toolUseId),
+    ).toEqual(['read-1'])
   })
 
   it('shows failed agent status and compact unavailable summary for Explore launch errors', () => {

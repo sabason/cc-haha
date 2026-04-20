@@ -22,18 +22,57 @@ type RenderItem =
   | { kind: 'tool_group'; toolCalls: ToolCall[]; id: string }
   | { kind: 'message'; message: UIMessage }
 
-export function buildRenderItems(messages: UIMessage[], toolUseIds: Set<string>): RenderItem[] {
-  const items: RenderItem[] = []
-  let pendingToolCalls: ToolCall[] = []
+type RenderModel = {
+  renderItems: RenderItem[]
+  toolResultMap: Map<string, ToolResult>
+  childToolCallsByParent: Map<string, ToolCall[]>
+}
 
-  const flushGroup = () => {
+function appendChildToolCall(
+  childToolCallsByParent: Map<string, ToolCall[]>,
+  parentToolUseId: string,
+  toolCall: ToolCall,
+) {
+  const siblings = childToolCallsByParent.get(parentToolUseId)
+  if (siblings) {
+    siblings.push(toolCall)
+  } else {
+    childToolCallsByParent.set(parentToolUseId, [toolCall])
+  }
+}
+
+export function buildRenderModel(messages: UIMessage[]): RenderModel {
+  const items: RenderItem[] = []
+  const toolResultMap = new Map<string, ToolResult>()
+  const childToolCallsByParent = new Map<string, ToolCall[]>()
+  const toolUseIds = new Set<string>()
+  let pendingToolCalls: ToolCall[] = []
+  const inlineParentToolUseIds = new Set<string>()
+
+  const flushGroup = (resetInlineParents = false) => {
     if (pendingToolCalls.length > 0) {
       items.push({
         kind: 'tool_group',
         toolCalls: [...pendingToolCalls],
         id: `group-${pendingToolCalls[0]!.id}`,
       })
+      for (const toolCall of pendingToolCalls) {
+        inlineParentToolUseIds.add(toolCall.toolUseId)
+      }
       pendingToolCalls = []
+    }
+
+    if (resetInlineParents) {
+      inlineParentToolUseIds.clear()
+    }
+  }
+
+  for (const msg of messages) {
+    if (msg.type === 'tool_use') {
+      toolUseIds.add(msg.toolUseId)
+    }
+    if (msg.type === 'tool_result') {
+      toolResultMap.set(msg.toolUseId, msg)
     }
   }
 
@@ -43,24 +82,30 @@ export function buildRenderItems(messages: UIMessage[], toolUseIds: Set<string>)
     }
 
     if (msg.type === 'tool_use') {
-      if (msg.parentToolUseId) {
+      const parentIsPending = msg.parentToolUseId
+        ? pendingToolCalls.some((toolCall) => toolCall.toolUseId === msg.parentToolUseId)
+        : false
+
+      if (msg.parentToolUseId && (inlineParentToolUseIds.has(msg.parentToolUseId) || parentIsPending)) {
         flushGroup()
+        appendChildToolCall(childToolCallsByParent, msg.parentToolUseId, msg)
+        inlineParentToolUseIds.add(msg.toolUseId)
         continue
       }
       if (msg.toolName === 'AskUserQuestion') {
-        flushGroup()
+        flushGroup(true)
         items.push({ kind: 'message', message: msg })
       } else {
         pendingToolCalls.push(msg)
       }
     } else {
-      flushGroup()
+      flushGroup(true)
       items.push({ kind: 'message', message: msg })
     }
   }
 
   flushGroup()
-  return items
+  return { renderItems: items, toolResultMap, childToolCallsByParent }
 }
 
 export function MessageList() {
@@ -77,31 +122,10 @@ export function MessageList() {
     bottomRef.current?.scrollIntoView?.({ behavior: 'smooth' })
   }, [messages.length, streamingText])
 
-  const { toolResultMap, childToolCallsByParent, renderItems } = useMemo(() => {
-    const toolUseIds = new Set<string>()
-    const toolResultMap = new Map<string, ToolResult>()
-    const childToolCallsByParent = new Map<string, ToolCall[]>()
-
-    for (const msg of messages) {
-      if (msg.type === 'tool_use') {
-        toolUseIds.add(msg.toolUseId)
-        if (msg.parentToolUseId) {
-          const siblings = childToolCallsByParent.get(msg.parentToolUseId)
-          if (siblings) {
-            siblings.push(msg)
-          } else {
-            childToolCallsByParent.set(msg.parentToolUseId, [msg])
-          }
-        }
-      }
-      if (msg.type === 'tool_result' && msg.toolUseId) {
-        toolResultMap.set(msg.toolUseId, msg)
-      }
-    }
-
-    const renderItems = buildRenderItems(messages, toolUseIds)
-    return { toolUseIds, toolResultMap, childToolCallsByParent, renderItems }
-  }, [messages])
+  const { toolResultMap, childToolCallsByParent, renderItems } = useMemo(
+    () => buildRenderModel(messages),
+    [messages],
+  )
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4">
