@@ -374,7 +374,7 @@ const TabItem = forwardRef<HTMLDivElement, {
       onMouseDown={onMouseDown}
       onContextMenu={onContextMenu}
       className={`
-        tab-bar-hit-area flex-shrink-0 flex items-center gap-1.5 px-3 min-h-[37px] relative
+        tab-bar-hit-area group flex-shrink-0 flex items-center gap-1.5 px-3 min-h-[37px] relative
         ${isDragging ? 'z-20 cursor-grabbing' : 'cursor-grab'}
         transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out
         ${isActive
@@ -408,11 +408,13 @@ const TabItem = forwardRef<HTMLDivElement, {
       </span>
 
       <button
+        type="button"
+        aria-label={`Close ${tab.title || 'Untitled'}`}
         onMouseDown={(e) => { e.stopPropagation() }}
         onClick={(e) => { e.stopPropagation(); onClose() }}
-        className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-[var(--color-surface-hover)] transition-opacity text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
+        className="flex-shrink-0 -mr-0.5 inline-flex h-3 w-3 items-center justify-center bg-transparent p-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-[opacity,color] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] focus-visible:outline-none"
       >
-        <span className="material-symbols-outlined text-[14px]">close</span>
+        <span className="material-symbols-outlined text-[11px] leading-none">close</span>
       </button>
     </div>
   )
