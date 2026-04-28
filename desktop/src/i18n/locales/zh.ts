@@ -116,6 +116,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.providers.baseUrlPlaceholder': 'https://api.example.com/anthropic',
   'settings.providers.apiKey': 'API 密钥',
   'settings.providers.apiKeyKeep': 'API 密钥（留空保持不变）',
+  'settings.providers.getApiKey': '获取 API Key',
   'settings.providers.modelMapping': '模型映射',
   'settings.providers.mainModel': '主模型',
   'settings.providers.haikuModel': 'Haiku 模型',

@@ -15,6 +15,7 @@ import { anthropicToOpenaiResponses } from '../proxy/transform/anthropicToOpenai
 import { openaiChatToAnthropic } from '../proxy/transform/openaiChatToAnthropic.js'
 import { openaiResponsesToAnthropic } from '../proxy/transform/openaiResponsesToAnthropic.js'
 import type { AnthropicRequest, AnthropicResponse } from '../proxy/transform/types.js'
+import { PROVIDER_PRESETS } from '../config/providerPresets.js'
 import type {
   SavedProvider,
   ProvidersIndex,
@@ -37,6 +38,20 @@ const MANAGED_ENV_KEYS = [
 ] as const
 
 const DEFAULT_INDEX: ProvidersIndex = { activeId: null, providers: [] }
+
+function getPresetDefaultEnv(presetId: string): Record<string, string> {
+  return PROVIDER_PRESETS.find((preset) => preset.id === presetId)?.defaultEnv ?? {}
+}
+
+function getManagedEnvKeys(): string[] {
+  const keys = new Set<string>(MANAGED_ENV_KEYS)
+  for (const preset of PROVIDER_PRESETS) {
+    for (const key of Object.keys(preset.defaultEnv ?? {})) {
+      keys.add(key)
+    }
+  }
+  return [...keys]
+}
 
 export class ProviderService {
   private static serverPort = 3456
@@ -234,6 +249,7 @@ export class ProviderService {
       : provider.baseUrl
 
     return {
+      ...getPresetDefaultEnv(provider.presetId),
       ANTHROPIC_BASE_URL: baseUrl,
       ANTHROPIC_API_KEY: needsProxy ? 'proxy-managed' : provider.apiKey,
       ANTHROPIC_MODEL: provider.models.main,
@@ -255,7 +271,7 @@ export class ProviderService {
     const existingEnv = (settings.env as Record<string, string>) || {}
     const cleanedEnv = { ...existingEnv }
 
-    for (const key of MANAGED_ENV_KEYS) {
+    for (const key of getManagedEnvKeys()) {
       delete cleanedEnv[key]
     }
 
@@ -271,7 +287,7 @@ export class ProviderService {
     const settings = await this.readSettings()
     const env = (settings.env as Record<string, string>) || {}
 
-    for (const key of MANAGED_ENV_KEYS) {
+    for (const key of getManagedEnvKeys()) {
       delete env[key]
     }
 

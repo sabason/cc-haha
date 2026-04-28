@@ -114,6 +114,7 @@ export const en = {
   'settings.providers.baseUrlPlaceholder': 'https://api.example.com/anthropic',
   'settings.providers.apiKey': 'API Key',
   'settings.providers.apiKeyKeep': 'API Key (leave blank to keep current)',
+  'settings.providers.getApiKey': 'Get API Key',
   'settings.providers.modelMapping': 'Model Mapping',
   'settings.providers.mainModel': 'Main Model',
   'settings.providers.haikuModel': 'Haiku Model',
