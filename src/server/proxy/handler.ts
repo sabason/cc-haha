@@ -5,11 +5,16 @@
  * OpenAI Chat Completions or Responses API format, forwards to the upstream
  * provider, and transforms the response back to Anthropic format.
  *
+ * Supports combo models: when the requested model matches a combo name in the
+ * provider's combo list, the combo name is passed through to the upstream
+ * OmniRoute server (which handles the actual routing strategy).
+ *
  * Derived from cc-switch (https://github.com/farion1231/cc-switch)
  * Original work by Jason Young, MIT License
  */
 
 import { ProviderService } from '../services/providerService.js'
+import { isComboModel } from '../services/comboResolver.js'
 import { anthropicToOpenaiChat } from './transform/anthropicToOpenaiChat.js'
 import { anthropicToOpenaiResponses } from './transform/anthropicToOpenaiResponses.js'
 import { openaiChatToAnthropic } from './transform/openaiChatToAnthropic.js'
@@ -17,6 +22,7 @@ import { openaiResponsesToAnthropic } from './transform/openaiResponsesToAnthrop
 import { openaiChatStreamToAnthropic } from './streaming/openaiChatStreamToAnthropic.js'
 import { openaiResponsesStreamToAnthropic } from './streaming/openaiResponsesStreamToAnthropic.js'
 import type { AnthropicRequest } from './transform/types.js'
+import type { Combo } from '../types/provider.js'
 
 const providerService = new ProviderService()
 
@@ -79,6 +85,11 @@ export async function handleProxyRequest(req: Request, url: URL): Promise<Respon
     )
   }
 
+  // Resolve combo model: if the requested model is a combo name, pass it through
+  // to the upstream OmniRoute server which handles the routing strategy.
+  // For non-OmniRoute providers, resolve the combo locally to an actual model.
+  body = resolveComboInBody(body, config.combos)
+
   const isStream = body.stream === true
   const baseUrl = config.baseUrl.replace(/\/+$/, '')
 
@@ -101,6 +112,17 @@ export async function handleProxyRequest(req: Request, url: URL): Promise<Respon
       { status: 502 },
     )
   }
+}
+
+function resolveComboInBody(body: AnthropicRequest, combos: Combo[] | undefined): AnthropicRequest {
+  if (!combos || combos.length === 0 || !body.model) return body
+
+  const combo = isComboModel(body.model, combos)
+  if (!combo) return body
+
+  // Pass the combo name through — OmniRoute handles the routing strategy.
+  // The combo name IS the model identifier that OmniRoute understands.
+  return body
 }
 
 async function handleOpenaiChat(

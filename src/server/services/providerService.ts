@@ -140,7 +140,16 @@ export class ProviderService {
 
   async updateManagedSettings(settings: Record<string, unknown>): Promise<void> {
     const current = await this.readSettings()
-    await this.writeSettings(Object.assign({}, current, settings))
+    const merged = Object.assign({}, current, settings)
+
+    // When the user switches to a different model (e.g. a combo model),
+    // also update ANTHROPIC_MODEL in the env so the CLI picks it up.
+    if (typeof settings.model === 'string') {
+      const env = (merged.env as Record<string, string>) || {}
+      merged.env = { ...env, ANTHROPIC_MODEL: settings.model }
+    }
+
+    await this.writeSettings(merged)
   }
 
   // --- CRUD ---
@@ -168,6 +177,7 @@ export class ProviderService {
       baseUrl: input.baseUrl,
       apiFormat: input.apiFormat ?? 'anthropic',
       models: input.models,
+      ...(input.combos !== undefined && { combos: input.combos }),
       ...(input.notes !== undefined && { notes: input.notes }),
     }
 
@@ -189,6 +199,7 @@ export class ProviderService {
       ...(input.baseUrl !== undefined && { baseUrl: input.baseUrl }),
       ...(input.apiFormat !== undefined && { apiFormat: input.apiFormat }),
       ...(input.models !== undefined && { models: input.models }),
+      ...(input.combos !== undefined && { combos: input.combos }),
       ...(input.notes !== undefined && { notes: input.notes }),
     }
 
@@ -247,9 +258,13 @@ export class ProviderService {
   ): Record<string, string> {
     const needsProxy = provider.apiFormat != null && provider.apiFormat !== 'anthropic'
     const proxyPath = options?.proxyPath ?? '/proxy'
-    const baseUrl = needsProxy
+    let baseUrl = needsProxy
       ? `http://127.0.0.1:${ProviderService.serverPort}${proxyPath}`
       : provider.baseUrl
+
+    if (!needsProxy) {
+      baseUrl = normalizeAnthropicBaseUrl(baseUrl)
+    }
 
     return {
       ...getPresetDefaultEnv(provider.presetId),
@@ -352,6 +367,7 @@ export class ProviderService {
     baseUrl: string
     apiKey: string
     apiFormat: ApiFormat
+    combos: import('../types/provider.js').Combo[] | undefined
   } | null> {
     if (providerId) {
       const provider = await this.getProvider(providerId)
@@ -359,6 +375,7 @@ export class ProviderService {
         baseUrl: provider.baseUrl,
         apiKey: provider.apiKey,
         apiFormat: provider.apiFormat ?? 'anthropic',
+        combos: provider.combos,
       }
     }
 
@@ -370,6 +387,7 @@ export class ProviderService {
       baseUrl: provider.baseUrl,
       apiKey: provider.apiKey,
       apiFormat: provider.apiFormat ?? 'anthropic',
+      combos: provider.combos,
     }
   }
 
@@ -377,6 +395,7 @@ export class ProviderService {
     baseUrl: string
     apiKey: string
     apiFormat: ApiFormat
+    combos: import('../types/provider.js').Combo[] | undefined
   } | null> {
     return this.getProviderForProxy()
   }
@@ -453,12 +472,18 @@ export class ProviderService {
         if (resBody?.error && typeof resBody.error === 'object') {
           error = ((resBody.error as Record<string, unknown>).message as string) || error
         }
+        if (response.status === 404 && format === 'anthropic') {
+          return this.testConnectivityFallback(base, apiKey, modelId, format, latencyMs)
+        }
         return { success: false, latencyMs, error, modelUsed: modelId, httpStatus: response.status }
       }
 
       // Validate response structure
       const valid = validateResponseBody(resBody, format)
       if (!valid.ok) {
+        if (format === 'anthropic') {
+          return this.testConnectivityFallback(base, apiKey, modelId, format, latencyMs)
+        }
         return { success: false, latencyMs, error: valid.error, modelUsed: modelId, httpStatus: response.status }
       }
 
@@ -470,6 +495,46 @@ export class ProviderService {
       }
       return { success: false, latencyMs, error: err instanceof Error ? err.message : String(err), modelUsed: modelId }
     }
+  }
+
+  private async testConnectivityFallback(
+    base: string,
+    apiKey: string,
+    modelId: string,
+    format: ApiFormat,
+    primaryLatencyMs: number,
+  ): Promise<ProviderTestStepResult> {
+    const candidates = buildFallbackTestUrls(base, format)
+    for (const url of candidates) {
+      const start = Date.now()
+      try {
+        const prompt = 'Say "ok" and nothing else.'
+        const headers: Record<string, string> = format === 'openai_chat'
+          ? { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }
+          : { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
+        const body = format === 'openai_chat'
+          ? { model: modelId, max_tokens: 16, stream: false, messages: [{ role: 'user', content: prompt }] }
+          : { model: modelId, max_tokens: 16, stream: false, messages: [{ role: 'user', content: prompt }] }
+        const response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(15000),
+        })
+        const latencyMs = Date.now() - start
+        const resBody = await response.json().catch(() => null) as Record<string, unknown> | null
+        if (response.ok) {
+          const valid = validateResponseBody(resBody, format)
+          if (valid.ok) {
+            const correctedBaseUrl = inferCorrectedBaseUrl(base, url, format)
+            return { success: true, latencyMs, modelUsed: valid.model || modelId, httpStatus: response.status, correctedBaseUrl }
+          }
+        }
+      } catch {
+        continue
+      }
+    }
+    return { success: false, latencyMs: primaryLatencyMs, error: 'Empty response — not a valid API endpoint', modelUsed: modelId }
   }
 
   /** Step 2: Full proxy pipeline — Anthropic → transform → upstream → transform back → validate. */
@@ -485,6 +550,7 @@ export class ProviderService {
       const anthropicReq: AnthropicRequest = {
         model: modelId,
         max_tokens: 64,
+        stream: false,
         messages: [{ role: 'user', content: 'Say "ok" and nothing else.' }],
       }
 
@@ -541,6 +607,40 @@ export class ProviderService {
 
 // ─── Helpers ───────────────────────────────────────────────
 
+function normalizeAnthropicBaseUrl(baseUrl: string): string {
+  const clean = baseUrl.replace(/\/+$/, '')
+  if (clean.endsWith('/v1/messages') || clean.endsWith('/v1/messages/')) {
+    return clean.replace(/\/v1\/messages\/?$/, '')
+  }
+  if (clean.endsWith('/v1') || clean.endsWith('/v1/')) {
+    return clean.replace(/\/v1\/?$/, '')
+  }
+  if (clean.endsWith('/api/v1') || clean.endsWith('/api/v1/')) {
+    return clean.replace(/\/v1\/?$/, '')
+  }
+  return clean
+}
+
+function inferCorrectedBaseUrl(originalBase: string, workingUrl: string, format: ApiFormat): string | undefined {
+  const clean = originalBase.replace(/\/+$/, '')
+  let suffix: string
+  if (format === 'openai_chat') {
+    suffix = '/v1/chat/completions'
+  } else if (format === 'openai_responses') {
+    suffix = '/v1/responses'
+  } else {
+    suffix = '/v1/messages'
+  }
+  const expectedUrl = `${clean}${suffix}`
+  if (expectedUrl === workingUrl) return undefined
+  const idx = workingUrl.lastIndexOf(suffix)
+  if (idx > 0) {
+    const inferred = workingUrl.slice(0, idx)
+    if (inferred !== clean) return inferred
+  }
+  return undefined
+}
+
 function buildDirectTestRequest(
   base: string,
   apiKey: string,
@@ -550,25 +650,69 @@ function buildDirectTestRequest(
   const prompt = 'Say "ok" and nothing else.'
 
   if (format === 'openai_chat') {
+    const suffix = '/v1/chat/completions'
+    const url = base.endsWith('/v1') || base.includes('/v1/')
+      ? `${base}/chat/completions`
+      : `${base}${suffix}`
     return {
-      url: `${base}/v1/chat/completions`,
+      url,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: { model: modelId, max_tokens: 16, messages: [{ role: 'user', content: prompt }] },
+      body: { model: modelId, max_tokens: 16, stream: false, messages: [{ role: 'user', content: prompt }] },
     }
   }
   if (format === 'openai_responses') {
+    const suffix = '/v1/responses'
+    const url = base.endsWith('/v1') || base.includes('/v1/')
+      ? `${base}/responses`
+      : `${base}${suffix}`
     return {
-      url: `${base}/v1/responses`,
+      url,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: { model: modelId, max_output_tokens: 16, input: [{ type: 'message', role: 'user', content: prompt }] },
     }
   }
   // anthropic
+  const suffix = '/v1/messages'
+  const url = base.endsWith('/v1/messages') || base.endsWith('/v1/messages/')
+    ? base.replace(/\/+$/, '')
+    : base.endsWith('/v1') || base.includes('/v1/')
+      ? `${base}/messages`
+      : `${base}${suffix}`
   return {
-    url: `${base}/v1/messages`,
+    url,
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: { model: modelId, max_tokens: 16, messages: [{ role: 'user', content: prompt }] },
+    body: { model: modelId, max_tokens: 16, stream: false, messages: [{ role: 'user', content: prompt }] },
   }
+}
+
+function buildFallbackTestUrls(base: string, format: ApiFormat): string[] {
+  let clean = base.replace(/\/+$/, '')
+  const stripped = clean.replace(/\/v1$/, '').replace(/\/v1\/$/, '')
+  if (format === 'anthropic') {
+    return [
+      `${stripped}/api/v1/messages`,
+      `${clean}/api/v1/messages`,
+      `${stripped}/v1/messages`,
+      `${clean}/v1/messages`,
+      `${clean}/messages`,
+    ]
+  }
+  if (format === 'openai_chat') {
+    return [
+      `${stripped}/api/v1/chat/completions`,
+      `${clean}/api/v1/chat/completions`,
+      `${stripped}/v1/chat/completions`,
+      `${clean}/v1/chat/completions`,
+      `${clean}/chat/completions`,
+    ]
+  }
+  return [
+    `${stripped}/api/v1/responses`,
+    `${clean}/api/v1/responses`,
+    `${stripped}/v1/responses`,
+    `${clean}/v1/responses`,
+    `${clean}/responses`,
+  ]
 }
 
 function validateResponseBody(

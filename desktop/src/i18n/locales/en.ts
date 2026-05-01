@@ -94,6 +94,7 @@ export const en = {
   'settings.providers.failed': 'Failed: {error}',
   'settings.providers.connectivityOk': '① Connectivity ({latency}ms)',
   'settings.providers.connectivityFailed': '① Connectivity failed: {error}',
+  'settings.providers.correctedBaseUrl': '⚠ Consider correcting Base URL to: {url}',
   'settings.providers.proxyOk': '② Proxy pipeline ({latency}ms)',
   'settings.providers.proxyFailed': '② Proxy failed: {error}',
   'settings.providers.confirmDelete': 'Delete provider "{name}"? This cannot be undone.',

@@ -52,6 +52,7 @@ export type ProviderTestStepResult = {
   error?: string
   modelUsed?: string
   httpStatus?: number
+  correctedBaseUrl?: string
 }
 
 export type ProviderTestResult = {

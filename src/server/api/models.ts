@@ -10,6 +10,7 @@
 
 import { SettingsService } from '../services/settingsService.js'
 import { ProviderService } from '../services/providerService.js'
+import { getComboModelList } from '../services/comboResolver.js'
 import { ApiError, errorResponse } from '../middleware/errorHandler.js'
 
 // ─── Fallback models (used when no provider is configured) ────────────────────
@@ -90,12 +91,27 @@ async function handleModelsList(): Promise<Response> {
       ...(activeProvider.models.sonnet !== activeProvider.models.main ? [{ id: activeProvider.models.sonnet, name: activeProvider.models.sonnet, description: 'Sonnet model', context: '' }] : []),
       ...(activeProvider.models.opus !== activeProvider.models.main ? [{ id: activeProvider.models.opus, name: activeProvider.models.opus, description: 'Opus model', context: '' }] : []),
     ]
+
+    // Append combo models from the provider
+    const comboModels = getComboModelList(activeProvider.combos)
+    for (const combo of comboModels) {
+      if (combo.isActive) {
+        modelList.push({
+          id: combo.name,
+          name: combo.name,
+          description: `Combo (${combo.strategy}): ${combo.models.join(', ')}`,
+          context: '',
+        })
+      }
+    }
+
     return Response.json({
       models: modelList,
       provider: { id: activeProvider.id, name: activeProvider.name },
+      combos: comboModels,
     })
   }
-  return Response.json({ models: DEFAULT_MODELS, provider: null })
+  return Response.json({ models: DEFAULT_MODELS, provider: null, combos: [] })
 }
 
 async function handleCurrentModel(req: Request): Promise<Response> {
@@ -140,6 +156,14 @@ async function handleCurrentModel(req: Request): Promise<Response> {
           ...(activeProvider.models.haiku && activeProvider.models.haiku !== activeProvider.models.main ? [{ id: activeProvider.models.haiku, name: activeProvider.models.haiku, description: 'Haiku model', context: '' }] : []),
           ...(activeProvider.models.sonnet && activeProvider.models.sonnet !== activeProvider.models.main ? [{ id: activeProvider.models.sonnet, name: activeProvider.models.sonnet, description: 'Sonnet model', context: '' }] : []),
           ...(activeProvider.models.opus && activeProvider.models.opus !== activeProvider.models.main ? [{ id: activeProvider.models.opus, name: activeProvider.models.opus, description: 'Opus model', context: '' }] : []),
+          ...getComboModelList(activeProvider.combos)
+            .filter((c) => c.isActive)
+            .map((c) => ({
+              id: c.name,
+              name: c.name,
+              description: `Combo (${c.strategy}): ${c.models.join(', ')}`,
+              context: '',
+            })),
         ]
       : DEFAULT_MODELS
 

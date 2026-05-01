@@ -24,6 +24,7 @@ const ProviderPresetSchema = z.object({
   apiKeyUrl: z.string().optional(),
   promoText: z.string().optional(),
   featured: z.boolean().optional(),
+  supportsCombos: z.boolean().optional(),
   defaultEnv: z.record(z.string(), z.string()).optional(),
 })
 

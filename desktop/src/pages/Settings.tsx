@@ -264,6 +264,11 @@ function ProviderSettings() {
                           ? t('settings.providers.connectivityOk', { latency: String(test.result.connectivity.latencyMs) })
                           : t('settings.providers.connectivityFailed', { error: test.result.connectivity.error || '' })}
                       </span>
+                      {test.result.connectivity.success && test.result.connectivity.correctedBaseUrl && (
+                        <span className="text-[var(--color-warning)]">
+                          {t('settings.providers.correctedBaseUrl', { url: test.result.connectivity.correctedBaseUrl })}
+                        </span>
+                      )}
                       {test.result.proxy && (
                         <span className={test.result.proxy.success ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}>
                           {test.result.proxy.success
@@ -741,6 +746,11 @@ function ProviderFormModal({ open, onClose, mode, provider, presets }: ProviderF
                   ? t('settings.providers.connectivityOk', { latency: String(testResult.connectivity.latencyMs) })
                   : t('settings.providers.connectivityFailed', { error: testResult.connectivity.error || '' })}
               </span>
+              {testResult.connectivity.success && testResult.connectivity.correctedBaseUrl && (
+                <span className="text-xs text-[var(--color-warning)]">
+                  {t('settings.providers.correctedBaseUrl', { url: testResult.connectivity.correctedBaseUrl })}
+                </span>
+              )}
               {testResult.proxy && (
                 <span className={`text-xs ${testResult.proxy.success ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}`}>
                   {testResult.proxy.success

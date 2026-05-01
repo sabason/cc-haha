@@ -21,6 +21,37 @@ export const ModelMappingSchema = z.object({
   opus: z.string(),
 })
 
+export const ComboStrategySchema = z.enum([
+  'priority',
+  'round-robin',
+  'random',
+  'weighted',
+  'least-used',
+  'cost-optimized',
+  'auto',
+])
+export type ComboStrategy = z.infer<typeof ComboStrategySchema>
+
+export const ComboModelEntrySchema = z.union([
+  z.string(),
+  z.object({
+    model: z.string(),
+    weight: z.number().min(0).max(100).optional(),
+    label: z.string().optional(),
+    providerId: z.string().optional(),
+  }),
+])
+export type ComboModelEntry = z.infer<typeof ComboModelEntrySchema>
+
+export const ComboSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  strategy: ComboStrategySchema.default('priority'),
+  models: z.array(ComboModelEntrySchema).min(1),
+  isActive: z.boolean().default(true),
+})
+export type Combo = z.infer<typeof ComboSchema>
+
 export const SavedProviderSchema = z.object({
   id: z.string(),
   presetId: z.string(),
@@ -29,6 +60,7 @@ export const SavedProviderSchema = z.object({
   baseUrl: z.string(),
   apiFormat: ApiFormatSchema.default('anthropic'),
   models: ModelMappingSchema,
+  combos: z.array(ComboSchema).optional(),
   notes: z.string().optional(),
 })
 
@@ -44,6 +76,7 @@ export const CreateProviderSchema = z.object({
   baseUrl: z.string(),
   apiFormat: ApiFormatSchema.default('anthropic'),
   models: ModelMappingSchema,
+  combos: z.array(ComboSchema).optional(),
   notes: z.string().optional(),
 })
 
@@ -53,6 +86,7 @@ export const UpdateProviderSchema = z.object({
   baseUrl: z.string().optional(),
   apiFormat: ApiFormatSchema.optional(),
   models: ModelMappingSchema.optional(),
+  combos: z.array(ComboSchema).optional(),
   notes: z.string().optional(),
 })
 
@@ -77,6 +111,7 @@ export interface ProviderTestStepResult {
   error?: string
   modelUsed?: string
   httpStatus?: number
+  correctedBaseUrl?: string
 }
 
 export interface ProviderTestResult {

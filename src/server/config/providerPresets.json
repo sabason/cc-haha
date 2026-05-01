@@ -165,5 +165,25 @@
     },
     "needsApiKey": true,
     "websiteUrl": ""
+  },
+  {
+    "id": "omniroute",
+    "name": "OmniRoute",
+    "baseUrl": "http://localhost:20128/api",
+    "apiFormat": "anthropic",
+    "defaultModels": {
+      "main": "claude-sonnet-4-6",
+      "haiku": "claude-haiku-4-5",
+      "sonnet": "claude-sonnet-4-6",
+      "opus": "claude-opus-4-7"
+    },
+    "needsApiKey": true,
+    "websiteUrl": "https://github.com/DroidTown/OmniRoute",
+    "promoText": "OmniRoute 是一个开源的 AI 模型路由代理，支持组合模型（Combo）和多服务商路由。组合模型允许你将多个模型按策略（优先级、轮询、随机、加权、成本优化等）组合使用，实现自动故障转移和负载均衡。",
+    "featured": true,
+    "supportsCombos": true,
+    "defaultEnv": {
+      "API_TIMEOUT_MS": "600000"
+    }
   }
 ]

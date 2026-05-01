@@ -96,6 +96,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.providers.failed': '失败: {error}',
   'settings.providers.connectivityOk': '① 连通 ({latency}ms)',
   'settings.providers.connectivityFailed': '① 连通失败: {error}',
+  'settings.providers.correctedBaseUrl': '⚠ 建议将 Base URL 修正为: {url}',
   'settings.providers.proxyOk': '② 代理转换 ({latency}ms)',
   'settings.providers.proxyFailed': '② 代理转换失败: {error}',
   'settings.providers.confirmDelete': '删除服务商 "{name}"？此操作不可撤销。',
